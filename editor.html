@@ -255,8 +255,25 @@ document.getElementById("btnTest").onclick = ()=>{
   if(lv.people.length===0){ alert("Önce en az bir adam yerleştir."); return; }
   const json = JSON.stringify(lv);
   const b64 = btoa(unescape(encodeURIComponent(json)));
-  window.open("index.html#level=" + encodeURIComponent(b64), "_blank");
+  // save the in-progress design so it's restored when you come back with "‹ geri"
+  try{ localStorage.setItem("crowdRushEditorDraft", JSON.stringify({W,H,name:lv.name,cellState,doors})); }catch(e){}
+  // same-tab navigation — window.open("_blank") gets silently blocked by popup
+  // blockers in most real browsers, so this is the reliable path.
+  location.href = "index.html#level=" + encodeURIComponent(b64);
 };
+
+// restore the last in-progress design (e.g. after using the browser's back button)
+try{
+  const draft = JSON.parse(localStorage.getItem("crowdRushEditorDraft"));
+  if(draft){
+    W = draft.W; H = draft.H;
+    document.getElementById("inW").value = W;
+    document.getElementById("inH").value = H;
+    document.getElementById("inName").value = draft.name || "Yeni Bölüm";
+    cellState = draft.cellState || {};
+    doors = draft.doors || {};
+  }
+}catch(e){}
 
 buildTools();
 render();
