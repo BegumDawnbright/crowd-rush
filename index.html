@@ -857,8 +857,12 @@ canvas.addEventListener("pointerdown", e=>{
     const hitCarpet = inGrid(x,y) ? carpetAt(x,y) : null;
     const hitPerson = inGrid(x,y) ? personAt(x,y) : null;
     const hitColor = hitCarpet ? hitCarpet.color : (hitPerson ? hitPerson.color : null);
-    if(tutorialPhase==="paint" || tutorialPhase==="move"){
+    if(tutorialPhase==="paint"){
       if(hitColor && hitColor!=="red") return;
+    } else if(tutorialPhase==="move"){
+      // only the already-linked red platform is touchable — no re-painting or
+      // splitting off a single red person to drag it through solo
+      if(!hitCarpet || hitCarpet.color!=="red") return;
     } else {   // "singlepaint" / "cancel" — only the one designated blue cell
       if(x!==TUT_BLUE_A[0] || y!==TUT_BLUE_A[1]) return;
     }
@@ -946,7 +950,10 @@ function endDrag(){
   if(drag.carpet){ drag.carpet.held=false; drag.carpet.vox=0; drag.carpet.voz=0; }
   if(!drag.moved){
     const [x,y] = drag.startCell;
-    if(inGrid(x,y) && drag.mode!=="paint" && drag.carpet) eraseCell(x,y);
+    // during the drag-tutorial step, a plain tap must never split the linked
+    // platform back apart — only a real drag is allowed to touch it
+    const blockErase = tutorialPhase==="move" && drag.carpet && drag.carpet.color==="red";
+    if(inGrid(x,y) && drag.mode!=="paint" && drag.carpet && !blockErase) eraseCell(x,y);
   }
   if(drag.mode==="paint" && drag.carpet) pruneCarpet(drag.carpet);
   drag = null;
