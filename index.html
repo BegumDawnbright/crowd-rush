@@ -318,6 +318,7 @@ function eraseCell(x,y){
   const p = personAt(x,y);
   if(p && p.carpet===c.id) p.carpet = null;
   pruneCarpet(c);
+  if(tutorialPhase==="cancel"){ tutorialPhase=null; tutorialOpen=false; hideHint(); }
   return true;
 }
 
@@ -376,7 +377,13 @@ function tryMove(c, dx, dy){
   if(exiting.length) S.shake = Math.min(0.16, 0.07 + exiting.length*0.03);
   pruneCarpet(c);
   S.moves++; syncHUD(); checkWin();
-  if(tutorialPhase==="move"){ tutorialPhase=null; tutorialOpen=false; hideHint(); }
+  if(tutorialPhase==="move"){
+    tutorialPhase = "singlepaint";
+    showHint("👆 Bir adamı da tek başına, grup yapmadan seçebilirsin — mavilerden birine dokun");
+  } else if(tutorialPhase==="cancel"){
+    // they moved on instead of tapping to cancel — don't get stuck waiting forever
+    tutorialPhase = null; tutorialOpen = false; hideHint();
+  }
   return true;
 }
 
@@ -557,7 +564,7 @@ const MAT = {
   wall : new THREE.MeshStandardMaterial({ color:0x39425c, roughness:.75, metalness:.1 }),
   eye  : new THREE.MeshStandardMaterial({ color:0x10131c, roughness:.4 }),
 };
-const bodyMat = {}, slabMat = {}, doorMat = {};
+const bodyMat = {}, slabMat = {}, doorMat = {}, entryMat = {};
 for(const k in COLORS){
   bodyMat[k] = new THREE.MeshStandardMaterial({ color:COLORS[k].base, roughness:.42, metalness:.12 });
   slabMat[k] = new THREE.MeshStandardMaterial({
@@ -565,6 +572,10 @@ for(const k in COLORS){
     emissive:COLORS[k].dark, emissiveIntensity:.55 });
   doorMat[k] = new THREE.MeshStandardMaterial({
     color:COLORS[k].base, emissive:COLORS[k].dark, emissiveIntensity:.35, roughness:.5 });
+  // floor tile right in front of this color's gate — visible from any camera angle
+  entryMat[k] = new THREE.MeshStandardMaterial({
+    color:0x1b2130, roughness:.9, metalness:0,
+    emissive:COLORS[k].base, emissiveIntensity:.22 });
 }
 
 const UP = new THREE.Vector3(0,1,0);
@@ -631,6 +642,14 @@ function buildScene(){
   base.geometry.__own = true;
   boardGroup.add(base);
 
+  // the cell right in front of each gate gets a soft color tint — readable from any camera angle
+  const doorEntry = new Map();
+  for(const d of S.doors){
+    const ex = d.x<0 ? 0 : d.x>=S.w ? S.w-1 : d.x;
+    const ey = d.y<0 ? 0 : d.y>=S.h ? S.h-1 : d.y;
+    doorEntry.set(key(ex,ey), d.color);
+  }
+
   for(let y=0;y<S.h;y++) for(let x=0;x<S.w;x++){
     if(S.walls.has(key(x,y))){
       const m = new THREE.Mesh(GEO.wall, MAT.wall);
@@ -638,7 +657,8 @@ function buildScene(){
       m.castShadow = m.receiveShadow = true;
       boardGroup.add(m);
     } else {
-      const m = new THREE.Mesh(GEO.tile, MAT.tile);
+      const entryColor = doorEntry.get(key(x,y));
+      const m = new THREE.Mesh(GEO.tile, entryColor ? entryMat[entryColor] : MAT.tile);
       m.position.set(wx(x), -0.08, wz(y));
       m.receiveShadow = true;
       boardGroup.add(m);
@@ -805,7 +825,13 @@ canvas.addEventListener("pointerdown", e=>{
 
   const c = inGrid(x,y) ? carpetAt(x,y) : null;
   if(c) drag.carpet = c;
-  else if(inGrid(x,y) && canStartPaint(x,y)){ drag.mode="paint"; drag.carpet = startPaint(x,y); }
+  else if(inGrid(x,y) && canStartPaint(x,y)){
+    drag.mode="paint"; drag.carpet = startPaint(x,y);
+    if(tutorialPhase==="singlepaint"){
+      tutorialPhase = "cancel";
+      showHint("✕ Aynı kareye tekrar dokunarak seçimi iptal edebilirsin — dene");
+    }
+  }
   else drag.mode = "idle";
 });
 
