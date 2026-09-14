@@ -57,6 +57,14 @@
     background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center;
     font-size:14px;
   }
+  #tutHint{
+    position:fixed; left:50%; bottom:78px; transform:translateX(-50%);
+    background:rgba(18,23,36,.94); border:1px solid rgba(255,255,255,.16);
+    border-radius:14px; padding:10px 20px; font-size:13px; font-weight:600;
+    z-index:6; pointer-events:none; box-shadow:0 12px 32px rgba(0,0,0,.55);
+    max-width:88vw; text-align:center; animation:tutPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes tutPulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.045)}}
   #debug{
     position:fixed; right:10px; top:56px; z-index:9;
     background:rgba(14,18,28,.94); border:1px solid rgba(255,255,255,.1);
@@ -109,6 +117,8 @@
   </ul>
   <button id="tutOk">Anladım, başla →</button>
 </div></div>
+
+<div id="tutHint"><span id="tutHintText"></span></div>
 
 <div id="debug">
   <h4>Ayarlar</h4>
@@ -366,6 +376,7 @@ function tryMove(c, dx, dy){
   if(exiting.length) S.shake = Math.min(0.16, 0.07 + exiting.length*0.03);
   pruneCarpet(c);
   S.moves++; syncHUD(); checkWin();
+  if(tutorialPhase==="move"){ tutorialPhase=null; tutorialOpen=false; hideHint(); }
   return true;
 }
 
@@ -395,7 +406,7 @@ function makePerson(id,x,y,color,st){
   const ox = x - (st.w-1)/2, oz = y - (st.h-1)/2;
   return {
     id, color, x, y, carpet:null, alive:true, fade:0, exitDir:[0,0],
-    bob: Math.random()*6.28,
+    bob: Math.random()*6.28, chubby:0,
     hip  : pt(ox,        HIP_Y,  oz),
     footL: pt(ox-0.07,   FOOT_Y, oz),
     footR: pt(ox+0.07,   FOOT_Y, oz),
@@ -733,7 +744,11 @@ function syncPeople(t){
     if(!p.alive && p.fade<=0){ G.group.visible=false; continue; }
     G.group.visible = true;
     const s = p.alive ? 1 : p.fade;
-    G.group.scale.setScalar(s);
+    // "chubby up" while riding a platform, ease back to normal once it's erased
+    const chubbyTarget = p.carpet ? 1 : 0;
+    p.chubby += (chubbyTarget - p.chubby) * 0.15;
+    const wScale = 1 + 0.24*p.chubby, hScale = 1 - 0.08*p.chubby;
+    G.group.scale.set(s*wScale, s*hScale, s*wScale);
 
     const h = p.head, hip = p.hip;
     G.head.position.set(h.x, h.y, h.z);
@@ -808,6 +823,10 @@ canvas.addEventListener("pointermove", e=>{
         ly + Math.round((y-ly)*i/steps));
     }
     drag.cell=[x,y];
+    if(tutorialPhase==="paint" && countPeople(drag.carpet)>=2){
+      tutorialPhase = "move";
+      showHint("✋ Şimdi platformu sürükleyerek kapıya doğru taşı");
+    }
   }
 
   if(drag.mode==="move"){
@@ -867,11 +886,17 @@ canvas.addEventListener("pointerleave", endDrag);
    ═════════════════════════════════════════════════════════════════ */
 const overlay = document.getElementById("overlay");
 const tutorial = document.getElementById("tutorial");
+const tutHint = document.getElementById("tutHint");
+const tutHintText = document.getElementById("tutHintText");
 let tutorialShown = !!customLevel, tutorialOpen = false;
+let tutorialPhase = null;   // null | "paint" | "move" — forces the first two real moves
+function showHint(text){ tutHintText.textContent = text; tutHint.hidden = false; }
+function hideHint(){ tutHint.hidden = true; }
 document.getElementById("tutOk").onclick = ()=>{
   tutorial.classList.remove("on");
-  tutorialOpen = false;
   last = performance.now();   // avoid a huge dt jump (and time-loss) after closing
+  tutorialPhase = "paint";
+  showHint("👆 Aynı renkteki adamların üzerinde parmağını gezdirerek platform oluştur");
 };
 function syncHUD(){
   document.getElementById("moveNum").textContent = S.moves;
@@ -929,6 +954,8 @@ function loadLevel(i){
   buildScene();
   syncHUD();
 
+  tutorialPhase = null;
+  hideHint();
   if(levelIndex===0 && !tutorialShown){
     tutorial.classList.add("on");
     tutorialOpen = true;
