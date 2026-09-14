@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Crowd Rush 3D</title>
+<style>
+  :root{ --panel:rgba(255,255,255,.06); --ink:#e8edf7; --ink-dim:#8e99b0; }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    margin:0; background:#0b0e15; color:var(--ink);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    overflow:hidden; touch-action:none; user-select:none;
+  }
+  #gl{position:fixed; inset:0; display:block; width:100%; height:100%}
+  header,footer{position:fixed; left:0; right:0; display:flex; gap:10px; align-items:center; padding:14px 16px; z-index:5}
+  header{top:0}
+  footer{bottom:0; flex-wrap:wrap}
+  .title{font-weight:700; letter-spacing:.5px; font-size:15px}
+  .spacer{flex:1}
+  .chip{
+    background:rgba(10,14,22,.7); border:1px solid rgba(255,255,255,.1);
+    padding:5px 11px; border-radius:999px; font-size:12px; color:var(--ink-dim);
+    font-variant-numeric:tabular-nums; backdrop-filter:blur(8px);
+  }
+  .chip b{color:var(--ink); font-weight:600}
+  button{
+    font:inherit; color:var(--ink); background:rgba(10,14,22,.7); backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,.12); border-radius:10px;
+    padding:6px 12px; cursor:pointer; transition:.12s;
+  }
+  button:hover{background:rgba(255,255,255,.14)}
+  button:active{transform:scale(.96)}
+  .hint{color:var(--ink-dim); font-size:12px; flex:1; min-width:190px; text-shadow:0 1px 3px #000}
+  #overlay, #tutorial{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(8,11,18,.72); backdrop-filter:blur(6px); z-index:10;
+  }
+  #overlay.on, #tutorial.on{display:flex}
+  .card{
+    background:linear-gradient(180deg,#202839,#161c29);
+    border:1px solid rgba(255,255,255,.1); border-radius:20px;
+    padding:28px 34px; text-align:center; box-shadow:0 30px 80px rgba(0,0,0,.6);
+    animation:pop .32s cubic-bezier(.2,1.4,.4,1);
+  }
+  @keyframes pop{from{transform:scale(.8); opacity:0}to{transform:scale(1); opacity:1}}
+  .card h2{margin:0 0 6px; font-size:26px}
+  .card p{margin:0 0 18px; color:var(--ink-dim)}
+  .stars{font-size:30px; letter-spacing:6px; margin-bottom:14px}
+  .tut-card{max-width:360px}
+  .tut-steps{list-style:none; margin:0 0 20px; padding:0; text-align:left; display:flex; flex-direction:column; gap:12px}
+  .tut-steps li{display:flex; gap:12px; align-items:flex-start; font-size:13px; color:var(--ink-dim); line-height:1.45}
+  .tut-steps b{color:var(--ink); font-weight:600}
+  .tut-icon{
+    flex:0 0 auto; width:26px; height:26px; border-radius:8px;
+    background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center;
+    font-size:14px;
+  }
+  #debug{
+    position:fixed; right:10px; top:56px; z-index:9;
+    background:rgba(14,18,28,.94); border:1px solid rgba(255,255,255,.1);
+    border-radius:12px; padding:12px 14px; font-size:12px; display:none; min-width:200px;
+  }
+  #debug.on{display:block}
+  #debug label{display:flex; justify-content:space-between; align-items:center; gap:10px; margin:7px 0; color:var(--ink-dim)}
+  #debug select,#debug input{
+    background:#0e1320; color:var(--ink); border:1px solid rgba(255,255,255,.14);
+    border-radius:7px; padding:3px 6px; font:inherit; width:100px;
+  }
+  #debug h4{margin:0 0 4px; font-size:12px; letter-spacing:.6px; text-transform:uppercase; color:var(--ink-dim)}
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<header>
+  <span class="title">CROWD RUSH <span style="opacity:.5">3D</span></span>
+  <span class="chip">Bölüm <b id="lvNum">1</b></span>
+  <span class="spacer"></span>
+  <span class="chip" id="limitChip" hidden>—</span>
+  <span class="chip">Hamle <b id="moveNum">0</b></span>
+</header>
+
+<footer>
+  <span class="hint">Aynı renk adamların üstünde parmağını gezdir → platform. Platformu sürükle → taşı (adamlar arkandan savrulur). Platforma tek dokun → o kare silinir.</span>
+  <button id="btnReset">Yeniden</button>
+  <button id="btnPrev">‹</button>
+  <button id="btnNext">›</button>
+  <button id="btnDebug">⚙︎</button>
+</footer>
+
+<div id="overlay"><div class="card">
+  <div class="stars" id="ovStars">★★★</div>
+  <h2 id="ovTitle">Bölüm tamam!</h2>
+  <p id="ovSub">—</p>
+  <button id="ovNext">Devam →</button>
+</div></div>
+
+<div id="tutorial"><div class="card tut-card">
+  <h2>Nasıl Oynanır?</h2>
+  <ul class="tut-steps">
+    <li><span class="tut-icon">👆</span><span>Aynı renkteki adamların üzerinde parmağını gezdirerek <b>platform oluştur</b>.</span></li>
+    <li><span class="tut-icon">✋</span><span>Platformu sürükleyerek <b>taşı</b> — üzerindeki adamlar seninle gelir.</span></li>
+    <li><span class="tut-icon">🚪</span><span>Adamları kendi renklerindeki <b>kapıya</b> ulaştır, oradan çıkarlar.</span></li>
+    <li><span class="tut-icon">✕</span><span>Platforma tek dokunursan o kare <b>silinir</b>.</span></li>
+    <li><span class="tut-icon">⏱</span><span>Süren var — bitmeden tüm adamları kapılardan çıkar!</span></li>
+  </ul>
+  <button id="tutOk">Anladım, başla →</button>
+</div></div>
+
+<div id="debug">
+  <h4>Ayarlar</h4>
+  <label>Boş hücre
+    <select id="dbgEmpty">
+      <option value="0">0 (kapalı)</option>
+      <option value="p">= adam sayısı</option>
+      <option value="99">sınırsız</option>
+    </select>
+  </label>
+  <label>Kaybetme
+    <select id="dbgFail">
+      <option value="none">yok (yıldız)</option>
+      <option value="time" selected>süre</option>
+      <option value="moves">hamle</option>
+    </select>
+  </label>
+  <label>Limit <input id="dbgLimit" type="number" min="1" value="60"></label>
+  <label>Sürüklenme <input id="dbgFling" type="range" min="0" max="100" value="55"></label>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════════
+   COLORS  ·  hex ints for three.js
+   ═════════════════════════════════════════════════════════════════ */
+const COLORS = {
+  red   : { base:0xff5a63, dark:0xa6222c },
+  blue  : { base:0x2f6bff, dark:0x123c8c },
+  green : { base:0x2ecc71, dark:0x0f7a3d },
+  yellow: { base:0xffc44d, dark:0xa87513 },
+  purple: { base:0xb57cff, dark:0x6a35b0 },
+};
+
+/* ══════════════════════════════════════════════════════════════════
+   LEVELS  (identical to the 2D build)
+   ═════════════════════════════════════════════════════════════════ */
+const LEVELS = [
+{ name:"Isınma", w:5, h:6, walls:[], star:[6,9,13],
+  people:[[1,4,"red"],[2,4,"red"],[3,2,"blue"],[3,3,"blue"]],
+  doors:[[-1,4,"red"],[5,2,"blue"]] },
+
+{ name:"Duvar", w:6, h:6, walls:[[2,2],[3,2],[2,3],[3,3]], star:[10,14,19],
+  people:[[0,0,"green"],[1,0,"green"],[5,5,"red"],[4,5,"red"],[5,0,"blue"],[5,1,"blue"]],
+  doors:[[-1,0,"green"],[6,5,"red"],[2,-1,"blue"]] },
+
+{ name:"Tıkaç", w:6, h:7, walls:[[0,3],[1,3],[4,3],[5,3]], star:[16,22,30],
+  people:[
+    [2,1,"red"],[3,1,"red"],
+    [2,3,"yellow"],[3,3,"yellow"],
+    [1,5,"blue"],[2,5,"blue"],[3,5,"blue"],
+    [0,0,"green"],[5,6,"green"]],
+  doors:[[6,1,"red"],[-1,2,"yellow"],[2,7,"blue"],[-1,0,"green"],[6,6,"green"]] },
+
+{ name:"Kalabalık", w:7, h:7, walls:[[3,3],[3,2],[3,4]], star:[18,25,34],
+  people:[
+    [0,0,"purple"],[1,0,"purple"],[2,0,"purple"],
+    [6,0,"red"],[6,1,"red"],
+    [0,6,"blue"],[1,6,"blue"],
+    [5,5,"yellow"],[6,5,"yellow"],[6,6,"yellow"],
+    [4,1,"green"],[4,2,"green"]],
+  doors:[[3,-1,"purple"],[7,1,"red"],[-1,6,"blue"],[7,6,"yellow"],[4,-1,"green"]] },
+];
+
+/* ══════════════════════════════════════════════════════════════════
+   GAME STATE + RULES   (pure — no rendering in here)
+   One world unit = one cell.
+   ═════════════════════════════════════════════════════════════════ */
+const key = (x,y)=> x+","+y;
+const unkey = k => k.split(",").map(Number);
+
+let S = null, levelIndex = 0;
+const cfg = { emptyMode:"0", fail:"time", limit:60, fling:0.55 };
+
+const wx = x => x - (S.w-1)/2;          // grid → world
+const wz = y => y - (S.h-1)/2;
+
+function buildState(def){
+  const st = {
+    def, w:def.w, h:def.h,
+    walls:new Set(def.walls.map(([x,y])=>key(x,y))),
+    people:[], carpets:[], doors:[],
+    nextCarpetId:1, moves:0, time:cfg.limit, over:false, won:false, shake:0,
+  };
+  def.people.forEach(([x,y,c],i)=> st.people.push(makePerson(i,x,y,c,st)));
+  def.doors.forEach(([x,y,c])=> st.doors.push({x,y,color:c}));
+  return st;
+}
+
+const personAt = (x,y)=> S.people.find(p=>p.alive && p.x===x && p.y===y) || null;
+const carpetById = id => S.carpets.find(c=>c.id===id) || null;
+const carpetAt = (x,y)=>{ const k=key(x,y); return S.carpets.find(c=>c.cells.has(k)) || null; };
+const doorAt = (x,y)=> S.doors.find(d=>d.x===x && d.y===y) || null;
+const inGrid = (x,y)=> x>=0 && y>=0 && x<S.w && y<S.h;
+
+function maxEmptyFor(n){
+  if(cfg.emptyMode==="0") return 0;
+  if(cfg.emptyMode==="p") return n;
+  return 999;
+}
+
+const canStartPaint = (x,y)=>{ const p=personAt(x,y); return p && !p.carpet; };
+
+function startPaint(x,y){
+  const p = personAt(x,y);
+  const c = { id:S.nextCarpetId++, color:p.color, cells:new Set([key(x,y)]),
+              born:performance.now(), ox:0, oz:0, vox:0, voz:0, held:false };
+  S.carpets.push(c);
+  p.carpet = c.id;
+  return c;
+}
+
+const countPeople = c => S.people.filter(p=>p.alive && p.carpet===c.id).length;
+
+function paintExtend(c,x,y){
+  if(!inGrid(x,y)) return false;
+  const k = key(x,y);
+  if(c.cells.has(k) || S.walls.has(k) || carpetAt(x,y)) return false;
+  const adj = [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>c.cells.has(key(x+dx,y+dy)));
+  if(!adj) return false;
+
+  const p = personAt(x,y);
+  if(p){
+    if(p.color !== c.color || p.carpet) return false;
+    c.cells.add(k); p.carpet = c.id;
+    return true;
+  }
+  const on = countPeople(c);
+  if((c.cells.size - on) + 1 > maxEmptyFor(on)) return false;
+  c.cells.add(k);
+  return true;
+}
+
+function removeCarpet(c){
+  S.people.forEach(p=>{ if(p.carpet===c.id) p.carpet=null; });
+  S.carpets = S.carpets.filter(o=>o!==c);
+}
+
+function pruneCarpet(c){
+  if(countPeople(c)===0){ removeCarpet(c); return; }
+  const on = countPeople(c), budget = maxEmptyFor(on);
+  let empties = [...c.cells].filter(k=>{ const [x,y]=unkey(k); return !personAt(x,y); });
+  while(empties.length > budget) c.cells.delete(empties.pop());
+
+  const seen=new Set(), keep=new Set();
+  for(const p of S.people){
+    if(!p.alive || p.carpet!==c.id) continue;
+    const start = key(p.x,p.y);
+    if(seen.has(start)) continue;
+    const q=[start]; seen.add(start);
+    while(q.length){
+      const cur=q.pop(); keep.add(cur);
+      const [x,y]=unkey(cur);
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nk=key(x+dx,y+dy);
+        if(c.cells.has(nk) && !seen.has(nk)){ seen.add(nk); q.push(nk); }
+      }
+    }
+  }
+  c.cells = keep;
+}
+
+function eraseCell(x,y){
+  const c = carpetAt(x,y);
+  if(!c) return false;
+  c.cells.delete(key(x,y));
+  const p = personAt(x,y);
+  if(p && p.carpet===c.id) p.carpet = null;
+  pruneCarpet(c);
+  return true;
+}
+
+/** Can this carpet step one cell? Pure — commits nothing. */
+function planMove(c, dx, dy){
+  const own = c.cells;
+  const riders = S.people.filter(p=>p.alive && p.carpet===c.id);
+  const exiting = [];
+  for(const p of riders){
+    const nx=p.x+dx, ny=p.y+dy;
+    if(!inGrid(nx,ny)){
+      const d = doorAt(nx,ny);
+      if(d && d.color===p.color){ exiting.push(p); continue; }
+      return null;
+    }
+    if(S.walls.has(key(nx,ny))) return null;
+    const other = personAt(nx,ny);
+    if(other && other.carpet !== c.id) return null;   // a stationary person is a WALL
+    const oc = carpetAt(nx,ny);
+    if(oc && oc.id!==c.id) return null;
+  }
+  const newCells = new Set();
+  for(const k of own){
+    const [x,y]=unkey(k);
+    const nx=x+dx, ny=y+dy;
+    if(!inGrid(nx,ny)){
+      const d = doorAt(nx,ny);
+      if(d && d.color===c.color) continue;
+      return null;
+    }
+    const nk=key(nx,ny);
+    if(S.walls.has(nk)) return null;
+    if(!own.has(nk)){
+      const other = personAt(nx,ny);
+      if(other && other.carpet!==c.id) return null;
+      const oc = carpetAt(nx,ny);
+      if(oc && oc.id!==c.id) return null;
+    }
+    newCells.add(nk);
+  }
+  return { newCells, riders, exiting };
+}
+const canMove = (c,dx,dy)=> planMove(c,dx,dy) !== null;
+
+function tryMove(c, dx, dy){
+  const plan = planMove(c,dx,dy);
+  if(!plan) return false;
+  const { newCells, riders, exiting } = plan;
+
+  c.cells = newCells;
+  c.ox -= dx; c.oz -= dy;              // cells jumped forward → cancel in the offset
+  for(const p of riders){ p.x += dx; p.y += dy; }
+  for(const p of exiting){
+    p.alive=false; p.carpet=null; p.fade=1; p.exitDir=[dx,dy];
+  }
+  if(exiting.length) S.shake = Math.min(0.16, 0.07 + exiting.length*0.03);
+  pruneCarpet(c);
+  S.moves++; syncHUD(); checkWin();
+  return true;
+}
+
+function checkWin(){
+  if(S.people.some(p=>p.alive)) return;
+  S.over = true; S.won = true;
+  setTimeout(showWin, 520);
+}
+function checkFail(){
+  if(S.over) return;
+  if(cfg.fail==="time" && S.time<=0){ S.over=true; showLose("Süre bitti"); }
+  if(cfg.fail==="moves" && S.moves>=cfg.limit){ S.over=true; showLose("Hamle bitti"); }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   RAGDOLL  ·  a verlet stickman held by the head
+   The head is pinned to the carpet. Everything else is free mass, so
+   when the carpet yanks sideways the legs trail behind and skid.
+   ═════════════════════════════════════════════════════════════════ */
+const HEAD_Y = 0.86, HIP_Y = 0.46, FOOT_Y = 0.03;
+const SPINE = HEAD_Y-HIP_Y, LEG = HIP_Y-FOOT_Y, ARM = 0.30;
+const GRAV = -8.5;
+
+const pt = (x,y,z)=>({ x, y, z, px:x, py:y, pz:z });
+
+function makePerson(id,x,y,color,st){
+  const ox = x - (st.w-1)/2, oz = y - (st.h-1)/2;
+  return {
+    id, color, x, y, carpet:null, alive:true, fade:0, exitDir:[0,0],
+    bob: Math.random()*6.28,
+    hip  : pt(ox,        HIP_Y,  oz),
+    footL: pt(ox-0.07,   FOOT_Y, oz),
+    footR: pt(ox+0.07,   FOOT_Y, oz),
+    handL: pt(ox-0.17,   HIP_Y+0.10, oz),
+    handR: pt(ox+0.17,   HIP_Y+0.10, oz),
+    head : { x:ox, y:HEAD_Y, z:oz },        // kinematic, driven every frame
+  };
+}
+
+function verlet(p, dt, damp){
+  const vx=(p.x-p.px)*damp, vy=(p.y-p.py)*damp, vz=(p.z-p.pz)*damp;
+  p.px=p.x; p.py=p.y; p.pz=p.z;
+  p.x+=vx; p.y+=vy+GRAV*dt*dt; p.z+=vz;
+}
+
+/** rigid distance constraint against an immovable anchor */
+function linkToAnchor(p, a, len){
+  let dx=p.x-a.x, dy=p.y-a.y, dz=p.z-a.z;
+  const d = Math.hypot(dx,dy,dz) || 1e-5;
+  const f = (d-len)/d;
+  p.x -= dx*f; p.y -= dy*f; p.z -= dz*f;
+}
+/** distance constraint where one end is much heavier than the other.
+ *  wa/wb decide who gives way — the hip is heavy, the foot is light,
+ *  so a taut leg YANKS the foot forward instead of pulling the body back. */
+function linkW(a, b, len, wa, wb){
+  let dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z;
+  const d = Math.hypot(dx,dy,dz) || 1e-5;
+  const f = (d-len)/d;
+  a.x+=dx*f*wa; a.y+=dy*f*wa; a.z+=dz*f*wa;
+  b.x-=dx*f*wb; b.y-=dy*f*wb; b.z-=dz*f*wb;
+}
+
+/** keep a point above the floor (called inside the solver loop) */
+function clampY(p){ if(p.y < FOOT_Y) p.y = FOOT_Y; }
+
+/** ground friction — ONCE per substep, never inside the solver loop,
+ *  otherwise it multiplies and welds the foot to the floor. */
+function skid(p, friction){
+  if(p.y <= FOOT_Y + 0.012){
+    p.px += (p.x-p.px)*friction;
+    p.pz += (p.z-p.pz)*friction;
+  }
+}
+
+function stepRagdoll(p, dt, t){
+  // ── 1. head = the hand holding him. purely kinematic. ──
+  const c = p.carpet ? carpetById(p.carpet) : null;
+  const hx = wx(p.x) + (c ? c.ox : 0);
+  const hz = wz(p.y) + (c ? c.oz : 0);
+
+  const hspeed = Math.hypot(hx - p.head.x, hz - p.head.z);
+  const dragging = !!c && (c.held || hspeed > 0.003);
+  const hoist = dragging ? 0.10 : (c ? 0.04 : 0);
+  const hy = HEAD_Y + hoist + Math.sin(t*0.0026 + p.bob)*0.012;
+  p.head.x = hx; p.head.y = hy; p.head.z = hz;
+
+  // ── 2. THE HIP IS THE ONLY SWINGING MASS. It hangs a spine-length under the
+  //        head; when the head is yanked it lags behind, then swings back like
+  //        a pendulum bob. Everything below the hip is carried rigidly, so the
+  //        entire lower body drifts and sways as one piece — no flailing feet. ──
+  verlet(p.hip, dt, 0.94);
+
+  // recentre only when nearly still, so a standing man squares up but a dragged
+  // one is left free to trail. higher "fling" = looser = more sway.
+  const still  = Math.max(0, 1 - hspeed*45);
+  const settle = 0.14 * still * (1 - cfg.fling*0.6);
+  p.hip.x += (hx - p.hip.x)*settle;
+  p.hip.z += (hz - p.hip.z)*settle;
+
+  // spine holds the hip a fixed distance below the head
+  for(let i=0;i<5;i++) linkToAnchor(p.hip, p.head, SPINE);
+  clampY(p.hip);
+  if(p.hip.y > hy-SPINE*0.55) p.hip.y = hy-SPINE*0.55;   // never rides up toward the head
+
+  // ── 3. lean axis (head → hip). the lower body is placed ALONG this axis, so
+  //        when the body tilts, the legs point down-the-lean and trail behind. ──
+  let ax=p.hip.x-hx, ay=p.hip.y-hy, az=p.hip.z-hz;
+  const al=Math.hypot(ax,ay,az)||1e-5; ax/=al; ay/=al; az/=al;
+
+  // feet: targets hang a full leg past the hip along the lean, spread sideways.
+  // they chase with inertia so they glide/trail, but can never climb above the hip.
+  const tLx=p.hip.x+ax*LEG-0.07, tLy=p.hip.y+ay*LEG, tLz=p.hip.z+az*LEG;
+  const tRx=p.hip.x+ax*LEG+0.07, tRy=p.hip.y+ay*LEG, tRz=p.hip.z+az*LEG;
+  const catchK = dragging ? 0.30 : 0.55;   // lower while dragging → more trailing
+  const limb = (f, tx, ty, tz, floorLevel)=>{
+    verlet(f, dt, 0.90);
+    f.x += (tx-f.x)*catchK; f.y += (ty-f.y)*catchK; f.z += (tz-f.z)*catchK;
+    if(f.y > p.hip.y-0.05) f.y = p.hip.y-0.05;   // stays below the hip, always
+    if(floorLevel) clampY(f);
+  };
+  limb(p.footL, tLx, tLy, tLz, true);
+  limb(p.footR, tRx, tRy, tRz, true);
+
+  // ── 4. arms hang from the shoulder the same way, lighter ──
+  const shx=hx, shy=hy-SPINE*0.30, shz=hz;
+  limb(p.handL, shx+ax*ARM*0.6-0.15, shy+ay*ARM*0.6, shz+az*ARM*0.6, false);
+  limb(p.handR, shx+ax*ARM*0.6+0.15, shy+ay*ARM*0.6, shz+az*ARM*0.6, false);
+
+  // ── 5. floor friction only when he's actually walking, not being hauled ──
+  if(!dragging){ skid(p.footL, 0.45); skid(p.footR, 0.45); }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   THREE.JS SCENE
+   ═════════════════════════════════════════════════════════════════ */
+const canvas = document.getElementById("gl");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0e15);
+scene.fog = new THREE.Fog(0x0b0e15, 9, 22);
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+
+const key1 = new THREE.DirectionalLight(0xffffff, 1.05);
+key1.position.set(4, 9, 4);
+key1.castShadow = true;
+key1.shadow.mapSize.set(1024,1024);
+const sc = key1.shadow.camera;
+sc.left=-7; sc.right=7; sc.top=7; sc.bottom=-7; sc.near=1; sc.far=25;
+scene.add(key1);
+scene.add(new THREE.HemisphereLight(0x9fc0ff, 0x131a28, 0.75));
+const rim = new THREE.DirectionalLight(0x6fa8ff, 0.45);
+rim.position.set(-5,3,-6); scene.add(rim);
+
+const world = new THREE.Group();       // everything that shakes
+scene.add(world);
+let boardGroup=null, peopleGroup=null, carpetGroup=null;
+
+/* shared geometry */
+const GEO = {
+  tile : new THREE.BoxGeometry(0.92, 0.16, 0.92),
+  wall : new THREE.BoxGeometry(0.9, 0.7, 0.9),
+  slab : new THREE.BoxGeometry(0.94, 0.09, 0.94),
+  head : new THREE.SphereGeometry(0.145, 20, 16),
+  joint: new THREE.SphereGeometry(0.045, 10, 8),
+  bone : new THREE.CylinderGeometry(1, 1, 1, 8),
+  eye  : new THREE.SphereGeometry(0.022, 8, 6),
+  ring : new THREE.TorusGeometry(0.30, 0.045, 10, 24),
+};
+const MAT = {
+  tile : new THREE.MeshStandardMaterial({ color:0x1b2130, roughness:.95, metalness:0 }),
+  wall : new THREE.MeshStandardMaterial({ color:0x39425c, roughness:.75, metalness:.1 }),
+  eye  : new THREE.MeshStandardMaterial({ color:0x10131c, roughness:.4 }),
+};
+const bodyMat = {}, slabMat = {}, doorMat = {};
+for(const k in COLORS){
+  bodyMat[k] = new THREE.MeshStandardMaterial({ color:COLORS[k].base, roughness:.42, metalness:.12 });
+  slabMat[k] = new THREE.MeshStandardMaterial({
+    color:COLORS[k].base, roughness:.5, metalness:.05,
+    emissive:COLORS[k].dark, emissiveIntensity:.55 });
+  doorMat[k] = new THREE.MeshStandardMaterial({
+    color:COLORS[k].base, emissive:COLORS[k].dark, emissiveIntensity:.35, roughness:.5 });
+}
+
+const UP = new THREE.Vector3(0,1,0);
+const _v = new THREE.Vector3();
+function boneBetween(mesh, a, b, r){
+  const dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z;
+  const len = Math.hypot(dx,dy,dz) || 1e-4;
+  mesh.position.set((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);
+  mesh.scale.set(r, len, r);
+  _v.set(dx/len, dy/len, dz/len);
+  mesh.quaternion.setFromUnitVectors(UP, _v);
+}
+
+function clearGroup(gp){
+  if(!gp) return;
+  world.remove(gp);
+  gp.traverse(o=>{ if(o.isMesh && o.geometry && o.geometry.__own) o.geometry.dispose(); });
+}
+
+function buildScene(){
+  clearGroup(boardGroup); clearGroup(peopleGroup); clearGroup(carpetGroup);
+  boardGroup  = new THREE.Group();
+  carpetGroup = new THREE.Group();
+  peopleGroup = new THREE.Group();
+  world.add(boardGroup, carpetGroup, peopleGroup);
+
+  // floor slab under everything
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(S.w+0.5, 0.5, S.h+0.5),
+    new THREE.MeshStandardMaterial({ color:0x121722, roughness:1 }));
+  base.position.y = -0.42; base.receiveShadow = true;
+  base.geometry.__own = true;
+  boardGroup.add(base);
+
+  for(let y=0;y<S.h;y++) for(let x=0;x<S.w;x++){
+    if(S.walls.has(key(x,y))){
+      const m = new THREE.Mesh(GEO.wall, MAT.wall);
+      m.position.set(wx(x), 0.35, wz(y));
+      m.castShadow = m.receiveShadow = true;
+      boardGroup.add(m);
+    } else {
+      const m = new THREE.Mesh(GEO.tile, MAT.tile);
+      m.position.set(wx(x), -0.08, wz(y));
+      m.receiveShadow = true;
+      boardGroup.add(m);
+    }
+  }
+
+  // doors
+  for(const d of S.doors){
+    const gp = new THREE.Group();
+    gp.position.set(wx(d.x), 0.34, wz(d.y));
+    const ring = new THREE.Mesh(GEO.ring, doorMat[d.color]);
+    // face the board
+    if(d.x < 0 || d.x >= S.w) ring.rotation.y = Math.PI/2;
+    gp.add(ring);
+    gp.userData.spin = ring;
+    boardGroup.add(gp);
+    d.mesh = gp;
+  }
+
+  // people
+  for(const p of S.people){
+    const gp = new THREE.Group();
+    const M = bodyMat[p.color];
+    const mk = (geo,mat)=>{ const m=new THREE.Mesh(geo,mat||M); m.castShadow=true; gp.add(m); return m; };
+    p.gfx = {
+      head : mk(GEO.head),
+      spine: mk(GEO.bone),
+      nose : null,
+      legL : mk(GEO.bone), legR : mk(GEO.bone),
+      armL : mk(GEO.bone), armR : mk(GEO.bone),
+      hip  : mk(GEO.joint),
+      footL: mk(GEO.joint), footR: mk(GEO.joint),
+      handL: mk(GEO.joint), handR: mk(GEO.joint),
+      eyeL : mk(GEO.eye, MAT.eye), eyeR : mk(GEO.eye, MAT.eye),
+      group: gp,
+    };
+    peopleGroup.add(gp);
+  }
+
+  fitCamera();
+}
+
+function fitCamera(){
+  const span = Math.max(S.w, S.h*0.86) + 3.8;   // room for the doors sitting outside the grid
+  const dist = span / (2*Math.tan(camera.fov*Math.PI/360)) * 1.02;
+  camera.position.set(0, dist*0.62, dist*0.80);   // lower, more of a 3/4 view
+  camera.lookAt(0, 0.15, 0.1);
+  // keep the haze behind the board, never on it
+  scene.fog.near = dist*1.25;
+  scene.fog.far  = dist*2.6;
+  key1.position.set(dist*0.35, dist*0.9, dist*0.45);
+  const sc = key1.shadow.camera;
+  const r = Math.max(S.w,S.h)*0.85 + 1.5;
+  sc.left=-r; sc.right=r; sc.top=r; sc.bottom=-r; sc.far = dist*2.6;
+  sc.updateProjectionMatrix();
+}
+
+/* carpet slabs are pooled — cells change constantly */
+const slabPool = [];
+function syncCarpets(){
+  let i = 0;
+  for(const c of S.carpets){
+    for(const k of c.cells){
+      const [x,y] = unkey(k);
+      let m = slabPool[i];
+      if(!m){ m = new THREE.Mesh(GEO.slab, slabMat[c.color]); m.receiveShadow=true; slabPool.push(m); carpetGroup.add(m); }
+      if(m.parent !== carpetGroup) carpetGroup.add(m);
+      m.material = slabMat[c.color];
+      m.visible = true;
+      m.position.set(wx(x)+c.ox, 0.045, wz(y)+c.oz);
+      i++;
+    }
+  }
+  for(; i<slabPool.length; i++) slabPool[i].visible = false;
+}
+
+function syncPeople(t){
+  for(const p of S.people){
+    const G = p.gfx;
+    if(!p.alive && p.fade<=0){ G.group.visible=false; continue; }
+    G.group.visible = true;
+    const s = p.alive ? 1 : p.fade;
+    G.group.scale.setScalar(s);
+
+    const h = p.head, hip = p.hip;
+    G.head.position.set(h.x, h.y, h.z);
+    G.hip.position.set(hip.x, hip.y, hip.z);
+    G.footL.position.set(p.footL.x,p.footL.y,p.footL.z);
+    G.footR.position.set(p.footR.x,p.footR.y,p.footR.z);
+    G.handL.position.set(p.handL.x,p.handL.y,p.handL.z);
+    G.handR.position.set(p.handR.x,p.handR.y,p.handR.z);
+
+    boneBetween(G.spine, hip, h, 0.052);
+    boneBetween(G.legL, hip, p.footL, 0.032);
+    boneBetween(G.legR, hip, p.footR, 0.032);
+    const sh = { x:h.x, y:h.y-SPINE*0.22, z:h.z };
+    boneBetween(G.armL, sh, p.handL, 0.027);
+    boneBetween(G.armR, sh, p.handR, 0.027);
+
+    // eyes look where he is being pulled
+    const lean = Math.max(-1, Math.min(1, (h.x-hip.x)*3));
+    G.eyeL.position.set(h.x-0.055+lean*0.012, h.y+0.03, h.z+0.128);
+    G.eyeR.position.set(h.x+0.055+lean*0.012, h.y+0.03, h.z+0.128);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   INPUT  ·  raycast onto the board plane
+   ═════════════════════════════════════════════════════════════════ */
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const PLANE = new THREE.Plane(new THREE.Vector3(0,1,0), -0.05);
+const hit = new THREE.Vector3();
+
+function worldFromPointer(e){
+  const r = canvas.getBoundingClientRect();
+  ndc.x = ((e.clientX-r.left)/r.width)*2 - 1;
+  ndc.y = -((e.clientY-r.top)/r.height)*2 + 1;
+  ray.setFromCamera(ndc, camera);
+  return ray.ray.intersectPlane(PLANE, hit) ? { x:hit.x, z:hit.z } : null;
+}
+const cellFromWorld = w => [ Math.round(w.x + (S.w-1)/2), Math.round(w.z + (S.h-1)/2) ];
+
+let drag = null;
+const TAP_SLOP = 9;
+
+canvas.addEventListener("pointerdown", e=>{
+  if(S.over) return;
+  const w = worldFromPointer(e); if(!w) return;
+  const [x,y] = cellFromWorld(w);
+  drag = { mode:"undecided", sx:e.clientX, sy:e.clientY, sw:w,
+           cell:[x,y], startCell:[x,y], carpet:null, moved:false, cmx:0, cmz:0 };
+
+  const c = inGrid(x,y) ? carpetAt(x,y) : null;
+  if(c) drag.carpet = c;
+  else if(inGrid(x,y) && canStartPaint(x,y)){ drag.mode="paint"; drag.carpet = startPaint(x,y); }
+  else drag.mode = "idle";
+});
+
+canvas.addEventListener("pointermove", e=>{
+  if(!drag || S.over) return;
+  const w = worldFromPointer(e); if(!w) return;
+  if(Math.hypot(e.clientX-drag.sx, e.clientY-drag.sy) > TAP_SLOP) drag.moved = true;
+  if(drag.mode==="undecided" && drag.moved && drag.carpet) drag.mode="move";
+
+  const [x,y] = cellFromWorld(w);
+
+  if(drag.mode==="paint"){
+    const [lx,ly] = drag.cell;
+    const steps = Math.max(Math.abs(x-lx), Math.abs(y-ly));
+    if(steps===0) paintExtend(drag.carpet, x, y);
+    for(let i=1;i<=steps;i++){
+      paintExtend(drag.carpet,
+        lx + Math.round((x-lx)*i/steps),
+        ly + Math.round((y-ly)*i/steps));
+    }
+    drag.cell=[x,y];
+  }
+
+  if(drag.mode==="move"){
+    const c = drag.carpet;
+    if(!S.carpets.includes(c)){ drag.mode="idle"; return; }
+    c.held = true;
+
+    let rawX = (w.x - drag.sw.x) - drag.cmx;
+    let rawZ = (w.z - drag.sw.z) - drag.cmz;
+
+    let guard=0;
+    while(guard++ < 40){
+      let stepped=false;
+      const order = Math.abs(rawX) >= Math.abs(rawZ)
+        ? [[Math.sign(rawX),0],[0,Math.sign(rawZ)]]
+        : [[0,Math.sign(rawZ)],[Math.sign(rawX),0]];
+      for(const [sx,sz] of order){
+        if(sx===0 && sz===0) continue;
+        if(!(sx ? Math.abs(rawX)>0.5 : Math.abs(rawZ)>0.5)) continue;
+        if(!tryMove(c, sx, sz)) continue;
+        drag.cmx += sx; drag.cmz += sz;
+        rawX -= sx; rawZ -= sz;
+        stepped = true; break;
+      }
+      if(!stepped) break;
+      if(!S.carpets.includes(c)){ drag.mode="idle"; return; }
+    }
+
+    const BAND = 0.17;
+    const soft = (v,dx,dz)=>{
+      if(v===0) return 0;
+      const open = canMove(c, dx*Math.sign(v), dz*Math.sign(v));
+      if(open) return Math.max(-0.5, Math.min(0.5, v));
+      return BAND*Math.tanh(v/BAND);
+    };
+    c.ox = soft(rawX,1,0);
+    c.oz = soft(rawZ,0,1);
+  }
+});
+
+function endDrag(){
+  if(!drag) return;
+  if(drag.carpet){ drag.carpet.held=false; drag.carpet.vox=0; drag.carpet.voz=0; }
+  if(!drag.moved){
+    const [x,y] = drag.startCell;
+    if(inGrid(x,y) && drag.mode!=="paint" && drag.carpet) eraseCell(x,y);
+  }
+  if(drag.mode==="paint" && drag.carpet) pruneCarpet(drag.carpet);
+  drag = null;
+}
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+canvas.addEventListener("pointerleave", endDrag);
+
+/* ══════════════════════════════════════════════════════════════════
+   HUD
+   ═════════════════════════════════════════════════════════════════ */
+const overlay = document.getElementById("overlay");
+const tutorial = document.getElementById("tutorial");
+let tutorialShown = false, tutorialOpen = false;
+document.getElementById("tutOk").onclick = ()=>{
+  tutorial.classList.remove("on");
+  tutorialOpen = false;
+  last = performance.now();   // avoid a huge dt jump (and time-loss) after closing
+};
+function syncHUD(){
+  document.getElementById("moveNum").textContent = S.moves;
+  const chip = document.getElementById("limitChip");
+  if(cfg.fail==="time"){ chip.hidden=false; chip.innerHTML="Süre <b>"+Math.ceil(S.time)+"</b>"; }
+  else if(cfg.fail==="moves"){ chip.hidden=false; chip.innerHTML="Kalan <b>"+Math.max(0,cfg.limit-S.moves)+"</b>"; }
+  else chip.hidden=true;
+}
+function showWin(){
+  const st = S.def.star || [99,99,99];
+  const n = S.moves<=st[0]?3 : S.moves<=st[1]?2 : 1;
+  document.getElementById("ovStars").textContent = "★★★☆☆".slice(3-n, 6-n);
+  document.getElementById("ovTitle").textContent = "Bölüm tamam!";
+  document.getElementById("ovSub").textContent = S.moves+" hamlede bitirdin";
+  document.getElementById("ovNext").textContent = "Devam →";
+  overlay.classList.add("on");
+}
+function showLose(reason){
+  document.getElementById("ovStars").textContent = "☆☆☆";
+  document.getElementById("ovTitle").textContent = reason;
+  document.getElementById("ovSub").textContent = "Tekrar dene";
+  document.getElementById("ovNext").textContent = "Yeniden";
+  overlay.classList.add("on");
+}
+document.getElementById("ovNext").onclick = ()=>{
+  overlay.classList.remove("on");
+  loadLevel(S.won ? levelIndex+1 : levelIndex);
+};
+document.getElementById("btnReset").onclick = ()=> loadLevel(levelIndex);
+document.getElementById("btnPrev").onclick  = ()=> loadLevel(levelIndex-1);
+document.getElementById("btnNext").onclick  = ()=> loadLevel(levelIndex+1);
+document.getElementById("btnDebug").onclick = ()=> document.getElementById("debug").classList.toggle("on");
+
+const dbgEmpty=document.getElementById("dbgEmpty"), dbgFail=document.getElementById("dbgFail"),
+      dbgLimit=document.getElementById("dbgLimit"), dbgFling=document.getElementById("dbgFling");
+dbgEmpty.onchange = ()=>{ cfg.emptyMode=dbgEmpty.value; loadLevel(levelIndex); };
+dbgFail.onchange  = ()=>{ cfg.fail=dbgFail.value; loadLevel(levelIndex); };
+dbgLimit.onchange = ()=>{ cfg.limit=Math.max(1,+dbgLimit.value||60); loadLevel(levelIndex); };
+dbgFling.oninput  = ()=>{ cfg.fling = +dbgFling.value/100; };
+
+/* ══════════════════════════════════════════════════════════════════
+   LOOP
+   ═════════════════════════════════════════════════════════════════ */
+function loadLevel(i){
+  levelIndex = (i + LEVELS.length) % LEVELS.length;
+  S = buildState(LEVELS[levelIndex]);
+  drag = null;
+  overlay.classList.remove("on");
+  document.getElementById("lvNum").textContent = levelIndex+1;
+  buildScene();
+  syncHUD();
+
+  if(levelIndex===0 && !tutorialShown){
+    tutorial.classList.add("on");
+    tutorialOpen = true;
+    tutorialShown = true;
+  } else {
+    tutorial.classList.remove("on");
+    tutorialOpen = false;
+  }
+}
+
+function resize(){
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  fitCamera();
+}
+addEventListener("resize", resize);
+
+let last = performance.now();
+function frame(t){
+  let dt = Math.min(0.033, (t-last)/1000); last = t;
+
+  // carpets ease back to cell centres when nobody holds them
+  for(const c of S.carpets){
+    if(c.held) continue;
+    c.vox += (0-c.ox)*0.34; c.vox *= 0.70; c.ox += c.vox;
+    c.voz += (0-c.oz)*0.34; c.voz *= 0.70; c.oz += c.voz;
+  }
+
+  // two substeps keeps the ragdoll stable when you yank fast
+  for(let i=0;i<2;i++) for(const p of S.people) stepRagdoll(p, dt/2, t);
+
+  for(const p of S.people){
+    if(p.fade>0 && !p.alive){ p.fade -= dt*1.8; if(p.fade<0) p.fade=0; }
+  }
+
+  if(!S.over && !tutorialOpen && cfg.fail==="time"){ S.time -= dt; if(S.time<0) S.time=0; syncHUD(); checkFail(); }
+
+  S.shake *= 0.88;
+  world.position.set((Math.random()-.5)*S.shake, 0, (Math.random()-.5)*S.shake);
+
+  for(const d of S.doors) if(d.mesh) d.mesh.userData.spin.rotation.z = t*0.0012;
+
+  syncCarpets();
+  syncPeople(t);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+loadLevel(0);
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
