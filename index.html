@@ -851,14 +851,17 @@ canvas.addEventListener("pointerdown", e=>{
   const w = worldFromPointer(e); if(!w) return;
   const [x,y] = cellFromWorld(w);
 
-  // during the forced tutorial, ignore taps on anything but this step's target
-  // color so the player can't wander off and get the hint stuck
+  // during the forced tutorial, ignore taps on anything but this step's exact
+  // target so the player can't wander off (to the other blue person, etc.)
   if(tutorialPhase){
-    const allowed = (tutorialPhase==="paint"||tutorialPhase==="move") ? "red" : "blue";
     const hitCarpet = inGrid(x,y) ? carpetAt(x,y) : null;
     const hitPerson = inGrid(x,y) ? personAt(x,y) : null;
     const hitColor = hitCarpet ? hitCarpet.color : (hitPerson ? hitPerson.color : null);
-    if(hitColor && hitColor!==allowed) return;
+    if(tutorialPhase==="paint" || tutorialPhase==="move"){
+      if(hitColor && hitColor!=="red") return;
+    } else {   // "singlepaint" / "cancel" — only the one designated blue cell
+      if(x!==TUT_BLUE_A[0] || y!==TUT_BLUE_A[1]) return;
+    }
   }
 
   drag = { mode:"undecided", sx:e.clientX, sy:e.clientY, sw:w,
