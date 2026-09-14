@@ -129,6 +129,7 @@
   <label>Limit <input id="dbgLimit" type="number" min="1" value="60"></label>
   <label>Sürüklenme <input id="dbgFling" type="range" min="0" max="100" value="55"></label>
   <label>Kamera açısı <input id="dbgCam" type="range" min="0" max="100" value="50"></label>
+  <label>Yakınlaştırma <input id="dbgZoom" type="range" min="0" max="100" value="50"></label>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -210,7 +211,7 @@ const key = (x,y)=> x+","+y;
 const unkey = k => k.split(",").map(Number);
 
 let S = null, levelIndex = 0;
-const cfg = { emptyMode:"0", fail:"time", limit:60, fling:0.55, camTilt:0.5 };
+const cfg = { emptyMode:"0", fail:"time", limit:60, fling:0.55, camTilt:0.5, zoom:0.5 };
 
 const wx = x => x - (S.w-1)/2;          // grid → world
 const wz = y => y - (S.h-1)/2;
@@ -690,7 +691,9 @@ function buildScene(){
 
 function fitCamera(){
   const span = Math.max(S.w, S.h*0.86) + 3.8;   // room for the doors sitting outside the grid
-  const dist = span / (2*Math.tan(camera.fov*Math.PI/360)) * 1.02;
+  // zoom: 0 = zoomed in close, 1 = zoomed out far
+  const zoomMul = 0.65 + cfg.zoom*0.9;
+  const dist = span / (2*Math.tan(camera.fov*Math.PI/360)) * 1.02 * zoomMul;
   // camTilt: 0 = near top-down, 1 = 3/4 side view
   const camY = 0.98 + (0.62-0.98)*cfg.camTilt, camZ = 0.34 + (0.80-0.34)*cfg.camTilt;
   camera.position.set(0, dist*camY, dist*camZ);
@@ -904,13 +907,15 @@ document.getElementById("btnDebug").onclick = ()=> document.getElementById("debu
 
 const dbgEmpty=document.getElementById("dbgEmpty"), dbgFail=document.getElementById("dbgFail"),
       dbgLimit=document.getElementById("dbgLimit"), dbgFling=document.getElementById("dbgFling"),
-      dbgCam=document.getElementById("dbgCam");
+      dbgCam=document.getElementById("dbgCam"), dbgZoom=document.getElementById("dbgZoom");
 dbgEmpty.onchange = ()=>{ cfg.emptyMode=dbgEmpty.value; loadLevel(levelIndex); };
 dbgFail.onchange  = ()=>{ cfg.fail=dbgFail.value; loadLevel(levelIndex); };
 dbgLimit.onchange = ()=>{ cfg.limit=Math.max(1,+dbgLimit.value||60); loadLevel(levelIndex); };
 dbgFling.oninput  = ()=>{ cfg.fling = +dbgFling.value/100; };
 dbgCam.value = cfg.camTilt*100;
 dbgCam.oninput = ()=>{ cfg.camTilt = +dbgCam.value/100; fitCamera(); };
+dbgZoom.value = cfg.zoom*100;
+dbgZoom.oninput = ()=>{ cfg.zoom = +dbgZoom.value/100; fitCamera(); };
 
 /* ══════════════════════════════════════════════════════════════════
    LOOP
