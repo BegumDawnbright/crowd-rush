@@ -406,7 +406,8 @@ function tryMove(c, dx, dy){
   if(exiting.length) S.shake = Math.min(0.16, 0.07 + exiting.length*0.03);
   pruneCarpet(c);
   S.moves++; syncHUD(); checkWin();
-  if(tutorialPhase==="move"){
+  if(tutorialPhase==="move" && S.people.filter(p=>p.color==="red").every(p=>!p.alive)){
+    // wait for BOTH red people to actually exit through the gate, not just one move
     tutorialPhase = "singlepaint";
     showHint("👆 Bir adamı da tek başına, grup yapmadan seçebilirsin — mavilerden birine dokun");
   } else if(tutorialPhase==="cancel"){
