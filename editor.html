@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Crowd Rush · Bölüm Editörü</title>
+<style>
+  :root{ --ink:#e8edf7; --ink-dim:#8e99b0; --cell:44px; }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{
+    margin:0; min-height:100vh; background:#0b0e15; color:var(--ink);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    display:flex; flex-direction:column; align-items:center; gap:16px; padding:20px 12px 60px;
+  }
+  h1{font-size:18px; margin:4px 0 0}
+  .sub{color:var(--ink-dim); font-size:12px; margin:0 0 4px}
+
+  .panel{
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+    border-radius:14px; padding:14px 16px; width:100%; max-width:560px;
+  }
+  .row{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:6px 0}
+  label{color:var(--ink-dim); font-size:12px; display:flex; align-items:center; gap:6px}
+  input[type=number], input[type=text]{
+    background:#0e1320; color:var(--ink); border:1px solid rgba(255,255,255,.14);
+    border-radius:7px; padding:5px 8px; font:inherit; width:64px;
+  }
+  input[type=text]{width:180px}
+  button{
+    font:inherit; color:var(--ink); background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.14); border-radius:9px;
+    padding:7px 12px; cursor:pointer; transition:.12s;
+  }
+  button:hover{background:rgba(255,255,255,.16)}
+  button:active{transform:scale(.96)}
+  button.tool.active{outline:2px solid #fff; background:rgba(255,255,255,.22)}
+  .swatch{width:16px; height:16px; border-radius:5px; display:inline-block; vertical-align:-3px; margin-right:6px}
+
+  .board-wrap{overflow:auto; max-width:100%; padding:8px}
+  .board{ display:inline-grid; gap:3px; }
+  .cell{
+    width:var(--cell); height:var(--cell); border-radius:6px; cursor:pointer;
+    background:#1b2130; display:flex; align-items:center; justify-content:center;
+    font-size:11px; color:var(--ink-dim); user-select:none;
+  }
+  .cell.wall{ background:#39425c; }
+  .cell.person{ box-shadow:inset 0 0 0 2px rgba(255,255,255,.25); }
+
+  .door-row{ display:flex; gap:3px; }
+  .door{
+    width:var(--cell); height:18px; border-radius:5px; cursor:pointer;
+    background:rgba(255,255,255,.06); border:1px dashed rgba(255,255,255,.18);
+  }
+  .door.set{ border-style:solid; }
+  .door-col{ display:flex; flex-direction:column; gap:3px; justify-content:center; }
+  .door-side{ width:18px; height:var(--cell); border-radius:5px; cursor:pointer;
+    background:rgba(255,255,255,.06); border:1px dashed rgba(255,255,255,.18); }
+  .door-side.set{ border-style:solid; }
+
+  .grid-outer{ display:grid; grid-template-columns:18px auto 18px; grid-template-rows:18px auto 18px; gap:3px; align-items:center; justify-items:center; }
+
+  textarea{
+    width:100%; min-height:160px; background:#0e1320; color:var(--ink);
+    border:1px solid rgba(255,255,255,.14); border-radius:9px; padding:10px;
+    font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; resize:vertical;
+  }
+  .hint{color:var(--ink-dim); font-size:12px}
+  a.btn{ text-decoration:none; }
+</style>
+</head>
+<body>
+
+<h1>🧩 Crowd Rush — Bölüm Editörü</h1>
+<p class="sub">Kendi bölümünü tasarla, doğrudan oyunda test et, sonra kodu kopyala.</p>
+
+<div class="panel">
+  <div class="row">
+    <label>Genişlik <input id="inW" type="number" min="3" max="12" value="6"></label>
+    <label>Yükseklik <input id="inH" type="number" min="3" max="12" value="6"></label>
+    <button id="btnResize">Izgarayı Oluştur</button>
+    <button id="btnClear">Temizle</button>
+  </div>
+  <div class="row">
+    <label>Bölüm adı <input id="inName" type="text" value="Yeni Bölüm"></label>
+  </div>
+  <div class="row" id="tools"></div>
+  <p class="hint">Karelere tıklayarak seçili aracı uygula. Kapı için ızgara kenarındaki kesikli şeritlere tıkla (renk seçiliyken).</p>
+</div>
+
+<div class="panel board-wrap">
+  <div id="gridOuter" class="grid-outer"></div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <button id="btnTest">▶ Oyunda Test Et</button>
+    <button id="btnExport">📋 Kodu Oluştur</button>
+    <button id="btnCopy">Kopyala</button>
+  </div>
+  <textarea id="out" placeholder="Kod burada görünecek…" readonly></textarea>
+  <p class="hint">"Kodu Oluştur"dan çıkan metni <code>index.html</code> içindeki <code>LEVELS</code> dizisine yapıştırabilirsin.</p>
+</div>
+
+<script>
+"use strict";
+const COLORS = {
+  red:"#ff5a63", blue:"#2f6bff", green:"#2ecc71", yellow:"#ffc44d", purple:"#b57cff"
+};
+const COLOR_ORDER = ["red","blue","green","yellow","purple"];
+
+let W = 6, H = 6;
+let cellState = {};   // "x,y" -> "wall" | color name
+let doors = {};        // "x,y" -> color   (x/y are the OUTSIDE coordinate: -1, W, -1, H)
+
+const key = (x,y)=> x+","+y;
+
+let tool = "wall";
+function buildTools(){
+  const wrap = document.getElementById("tools");
+  wrap.innerHTML = "";
+  const mk = (id,label,swatch)=>{
+    const b = document.createElement("button");
+    b.className = "tool"; b.dataset.tool = id;
+    b.innerHTML = (swatch? `<span class="swatch" style="background:${swatch}"></span>`:"") + label;
+    b.onclick = ()=>{ tool=id; syncTools(); };
+    wrap.appendChild(b);
+  };
+  mk("wall","Duvar");
+  COLOR_ORDER.forEach(c=> mk(c, c, COLORS[c]));
+  mk("eraser","Sil");
+  syncTools();
+}
+function syncTools(){
+  document.querySelectorAll(".tool").forEach(b=> b.classList.toggle("active", b.dataset.tool===tool));
+}
+
+function resize(){
+  W = Math.max(3, Math.min(12, +document.getElementById("inW").value||6));
+  H = Math.max(3, Math.min(12, +document.getElementById("inH").value||6));
+  // keep whatever still fits inside the new bounds instead of wiping the design
+  const keptCells = {}, keptDoors = {};
+  for(const k in cellState){
+    const [x,y] = k.split(",").map(Number);
+    if(x>=0 && x<W && y>=0 && y<H) keptCells[k] = cellState[k];
+  }
+  for(const k in doors){
+    const [x,y] = k.split(",").map(Number);
+    const onBorder = (x===-1||x===W) ? (y>=0&&y<H) : (y===-1||y===H) ? (x>=0&&x<W) : false;
+    if(onBorder) keptDoors[k] = doors[k];
+  }
+  cellState = keptCells; doors = keptDoors;
+  render();
+}
+
+function cellClick(x,y){
+  const k = key(x,y);
+  if(tool==="eraser"){ delete cellState[k]; }
+  else if(tool==="wall"){ cellState[k] = (cellState[k]==="wall") ? undefined : "wall"; if(!cellState[k]) delete cellState[k]; }
+  else { cellState[k] = (cellState[k]===tool) ? undefined : tool; if(!cellState[k]) delete cellState[k]; }
+  render();
+}
+function doorClick(x,y){
+  const k = key(x,y);
+  if(tool==="wall" || tool==="eraser"){ delete doors[k]; render(); return; }
+  doors[k] = (doors[k]===tool) ? undefined : tool;
+  if(!doors[k]) delete doors[k];
+  render();
+}
+
+function render(){
+  const outer = document.getElementById("gridOuter");
+  outer.innerHTML = "";
+  outer.style.gridTemplateColumns = `18px repeat(${W}, var(--cell)) 18px`;
+  outer.style.gridTemplateRows = `18px repeat(${H}, var(--cell)) 18px`;
+
+  const blank = ()=>{ const d=document.createElement("div"); return d; };
+
+  // row 0: corner, top doors, corner
+  outer.appendChild(blank());
+  for(let x=0;x<W;x++) outer.appendChild(makeDoor(x,-1));
+  outer.appendChild(blank());
+
+  for(let y=0;y<H;y++){
+    outer.appendChild(makeDoor(-1,y));
+    for(let x=0;x<W;x++) outer.appendChild(makeCell(x,y));
+    outer.appendChild(makeDoor(W,y));
+  }
+
+  outer.appendChild(blank());
+  for(let x=0;x<W;x++) outer.appendChild(makeDoor(x,H));
+  outer.appendChild(blank());
+}
+
+function makeCell(x,y){
+  const k = key(x,y);
+  const st = cellState[k];
+  const d = document.createElement("div");
+  d.className = "cell" + (st==="wall" ? " wall" : st ? " person":"");
+  if(st && st!=="wall"){ d.style.background = COLORS[st]; }
+  d.onclick = ()=> cellClick(x,y);
+  return d;
+}
+function makeDoor(x,y){
+  const k = key(x,y);
+  const c = doors[k];
+  const vertical = (y===-1 || y===H);
+  const d = document.createElement("div");
+  d.className = (vertical ? "door" : "door-side") + (c? " set":"");
+  if(c){ d.style.background = COLORS[c]; d.style.borderColor = COLORS[c]; }
+  d.onclick = ()=> doorClick(x,y);
+  return d;
+}
+
+function currentLevel(){
+  const walls=[], people=[], doorList=[];
+  for(const k in cellState){
+    const [x,y] = k.split(",").map(Number);
+    if(cellState[k]==="wall") walls.push([x,y]);
+    else people.push([x,y,cellState[k]]);
+  }
+  for(const k in doors){
+    const [x,y] = k.split(",").map(Number);
+    doorList.push([x,y,doors[k]]);
+  }
+  const n = people.length;
+  return {
+    name: document.getElementById("inName").value.trim() || "Özel Bölüm",
+    w:W, h:H, walls, people, doors:doorList,
+    star:[ Math.max(4,Math.round(n*3)), Math.max(6,Math.round(n*4.5)), Math.max(9,Math.round(n*7)) ]
+  };
+}
+
+document.getElementById("btnResize").onclick = resize;
+document.getElementById("btnClear").onclick = ()=>{ cellState={}; doors={}; render(); };
+
+document.getElementById("btnExport").onclick = ()=>{
+  const lv = currentLevel();
+  const fmt = arr => "[" + arr.map(v=> Array.isArray(v) ? "["+v.map(x=>typeof x==="string"?`"${x}"`:x).join(",")+"]" : v).join(",") + "]";
+  const txt =
+`{ name:"${lv.name}", w:${lv.w}, h:${lv.h}, star:[${lv.star.join(",")}],
+  walls:${fmt(lv.walls)},
+  people:${fmt(lv.people)},
+  doors:${fmt(lv.doors)} },`;
+  document.getElementById("out").value = txt;
+};
+
+document.getElementById("btnCopy").onclick = ()=>{
+  const ta = document.getElementById("out");
+  ta.select();
+  navigator.clipboard?.writeText(ta.value).catch(()=>{ document.execCommand("copy"); });
+};
+
+document.getElementById("btnTest").onclick = ()=>{
+  const lv = currentLevel();
+  if(lv.people.length===0){ alert("Önce en az bir adam yerleştir."); return; }
+  const json = JSON.stringify(lv);
+  const b64 = btoa(unescape(encodeURIComponent(json)));
+  window.open("index.html#level=" + encodeURIComponent(b64), "_blank");
+};
+
+buildTools();
+render();
+</script>
+</body>
+</html>
