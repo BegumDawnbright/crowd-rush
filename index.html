@@ -744,31 +744,35 @@ function syncPeople(t){
     if(!p.alive && p.fade<=0){ G.group.visible=false; continue; }
     G.group.visible = true;
     const s = p.alive ? 1 : p.fade;
-    // "chubby up" while riding a platform, ease back to normal once it's erased
+    G.group.scale.setScalar(s);
+
+    // "chubby up" while riding a platform, ease back to normal once it's erased.
+    // Scaled per-mesh (around each mesh's own center) instead of on the group,
+    // so the character stays put instead of sliding toward the world origin.
     const chubbyTarget = p.carpet ? 1 : 0;
     p.chubby += (chubbyTarget - p.chubby) * 0.15;
-    const wScale = 1 + 0.24*p.chubby, hScale = 1 - 0.08*p.chubby;
-    G.group.scale.set(s*wScale, s*hScale, s*wScale);
+    const jointScale = 1 + 0.32*p.chubby;
+    const limbFatten  = 1 + 0.30*p.chubby;
 
     const h = p.head, hip = p.hip;
-    G.head.position.set(h.x, h.y, h.z);
-    G.hip.position.set(hip.x, hip.y, hip.z);
-    G.footL.position.set(p.footL.x,p.footL.y,p.footL.z);
-    G.footR.position.set(p.footR.x,p.footR.y,p.footR.z);
-    G.handL.position.set(p.handL.x,p.handL.y,p.handL.z);
-    G.handR.position.set(p.handR.x,p.handR.y,p.handR.z);
+    G.head.position.set(h.x, h.y, h.z);   G.head.scale.setScalar(jointScale);
+    G.hip.position.set(hip.x, hip.y, hip.z);   G.hip.scale.setScalar(jointScale);
+    G.footL.position.set(p.footL.x,p.footL.y,p.footL.z);   G.footL.scale.setScalar(jointScale);
+    G.footR.position.set(p.footR.x,p.footR.y,p.footR.z);   G.footR.scale.setScalar(jointScale);
+    G.handL.position.set(p.handL.x,p.handL.y,p.handL.z);   G.handL.scale.setScalar(jointScale);
+    G.handR.position.set(p.handR.x,p.handR.y,p.handR.z);   G.handR.scale.setScalar(jointScale);
 
-    boneBetween(G.spine, hip, h, 0.052);
-    boneBetween(G.legL, hip, p.footL, 0.032);
-    boneBetween(G.legR, hip, p.footR, 0.032);
+    boneBetween(G.spine, hip, h, 0.052);   G.spine.scale.x *= limbFatten; G.spine.scale.z *= limbFatten;
+    boneBetween(G.legL, hip, p.footL, 0.032);   G.legL.scale.x *= limbFatten; G.legL.scale.z *= limbFatten;
+    boneBetween(G.legR, hip, p.footR, 0.032);   G.legR.scale.x *= limbFatten; G.legR.scale.z *= limbFatten;
     const sh = { x:h.x, y:h.y-SPINE*0.22, z:h.z };
-    boneBetween(G.armL, sh, p.handL, 0.027);
-    boneBetween(G.armR, sh, p.handR, 0.027);
+    boneBetween(G.armL, sh, p.handL, 0.027);   G.armL.scale.x *= limbFatten; G.armL.scale.z *= limbFatten;
+    boneBetween(G.armR, sh, p.handR, 0.027);   G.armR.scale.x *= limbFatten; G.armR.scale.z *= limbFatten;
 
     // eyes look where he is being pulled
     const lean = Math.max(-1, Math.min(1, (h.x-hip.x)*3));
-    G.eyeL.position.set(h.x-0.055+lean*0.012, h.y+0.03, h.z+0.128);
-    G.eyeR.position.set(h.x+0.055+lean*0.012, h.y+0.03, h.z+0.128);
+    G.eyeL.position.set(h.x-0.055+lean*0.012, h.y+0.03, h.z+0.128);   G.eyeL.scale.setScalar(jointScale);
+    G.eyeR.position.set(h.x+0.055+lean*0.012, h.y+0.03, h.z+0.128);   G.eyeR.scale.setScalar(jointScale);
   }
 }
 
