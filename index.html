@@ -65,6 +65,15 @@
     max-width:88vw; text-align:center; animation:tutPulse 1.6s ease-in-out infinite;
   }
   @keyframes tutPulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.045)}}
+  #tutSpotlight{
+    position:fixed; pointer-events:none; z-index:4; border-radius:999px;
+    box-shadow:0 0 0 9999px rgba(3,5,12,.64);
+  }
+  #tutHand{
+    position:fixed; pointer-events:none; z-index:7; font-size:34px;
+    transform:translate(-50%,-50%);
+    filter:drop-shadow(0 6px 14px rgba(0,0,0,.65));
+  }
   #debug{
     position:fixed; right:10px; top:56px; z-index:9;
     background:rgba(14,18,28,.94); border:1px solid rgba(255,255,255,.1);
@@ -119,6 +128,8 @@
 </div></div>
 
 <div id="tutHint"><span id="tutHintText"></span></div>
+<div id="tutSpotlight" hidden></div>
+<div id="tutHand" hidden></div>
 
 <div id="debug">
   <h4>Ayarlar</h4>
@@ -552,7 +563,7 @@ let boardGroup=null, peopleGroup=null, carpetGroup=null;
 const GEO = {
   tile : new THREE.BoxGeometry(0.92, 0.16, 0.92),
   wall : new THREE.BoxGeometry(0.9, 0.7, 0.9),
-  slab : new THREE.BoxGeometry(0.94, 0.09, 0.94),
+  slab : new THREE.BoxGeometry(0.995, 0.09, 0.995),
   head : new THREE.SphereGeometry(0.145, 20, 16),
   joint: new THREE.SphereGeometry(0.045, 10, 8),
   bone : new THREE.CylinderGeometry(1, 1, 1, 8),
@@ -918,10 +929,70 @@ const overlay = document.getElementById("overlay");
 const tutorial = document.getElementById("tutorial");
 const tutHint = document.getElementById("tutHint");
 const tutHintText = document.getElementById("tutHintText");
+const tutSpotlight = document.getElementById("tutSpotlight");
+const tutHand = document.getElementById("tutHand");
 let tutorialShown = !!customLevel, tutorialOpen = false;
-let tutorialPhase = null;   // null | "paint" | "move" — forces the first two real moves
+let tutorialPhase = null;   // null | "paint" | "move" | "singlepaint" | "cancel"
 function showHint(text){ tutHintText.textContent = text; tutHint.hidden = false; }
 function hideHint(){ tutHint.hidden = true; }
+
+// fixed reference points from level 1 ("Isınma") — used to aim the tutorial hand/spotlight
+const TUT_RED_A = LEVELS[0].people[0], TUT_RED_B = LEVELS[0].people[1];
+const TUT_BLUE_A = LEVELS[0].people[2];
+const TUT_RED_DOOR = LEVELS[0].doors[0];
+
+function projectCell(gx, gy){
+  const v = new THREE.Vector3(wx(gx), 0.12, wz(gy));
+  v.project(camera);
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: rect.left + (v.x*0.5+0.5)*rect.width,
+    y: rect.top + (1-(v.y*0.5+0.5))*rect.height,
+  };
+}
+
+function updateTutorialFX(t){
+  if(!tutorialPhase){ tutSpotlight.hidden = true; tutHand.hidden = true; return; }
+  tutSpotlight.hidden = false; tutHand.hidden = false;
+  const wobble = (Math.sin(t*0.0032)+1)/2;   // 0..1 back-and-forth
+  let cx,cy,radius,hx,hy,glyph;
+
+  if(tutorialPhase==="paint"){
+    const a = projectCell(TUT_RED_A[0], TUT_RED_A[1]);
+    const b = projectCell(TUT_RED_B[0], TUT_RED_B[1]);
+    cx=(a.x+b.x)/2; cy=(a.y+b.y)/2;
+    radius = Math.hypot(b.x-a.x, b.y-a.y)/2 + 55;
+    hx = a.x+(b.x-a.x)*wobble; hy = a.y+(b.y-a.y)*wobble;
+    glyph = "🖐️";
+  } else if(tutorialPhase==="move"){
+    const carpet = S.carpets.find(c=>c.color==="red");
+    let baseX, baseY;
+    if(carpet && carpet.cells.size){
+      let sx=0, sy=0, n=0;
+      for(const k of carpet.cells){ const [gx,gy]=unkey(k); const pp=projectCell(gx,gy); sx+=pp.x; sy+=pp.y; n++; }
+      baseX = sx/n; baseY = sy/n;
+    } else {
+      const a = projectCell(TUT_RED_A[0], TUT_RED_A[1]); baseX=a.x; baseY=a.y;
+    }
+    const doorP = projectCell(TUT_RED_DOOR[0], TUT_RED_DOOR[1]);
+    cx=(baseX+doorP.x)/2; cy=(baseY+doorP.y)/2;
+    radius = Math.hypot(doorP.x-baseX, doorP.y-baseY)/2 + 65;
+    hx = baseX+(doorP.x-baseX)*wobble; hy = baseY+(doorP.y-baseY)*wobble;
+    glyph = "🖐️";
+  } else {   // "singlepaint" or "cancel" — a tap gesture on the first blue person
+    const a = projectCell(TUT_BLUE_A[0], TUT_BLUE_A[1]);
+    cx=a.x; cy=a.y; radius=68;
+    hx=a.x; hy=a.y + Math.sin(t*0.007)*5;
+    glyph = "👆";
+  }
+
+  tutSpotlight.style.width = tutSpotlight.style.height = (radius*2)+"px";
+  tutSpotlight.style.left = (cx-radius)+"px";
+  tutSpotlight.style.top  = (cy-radius)+"px";
+  tutHand.style.left = hx+"px";
+  tutHand.style.top  = hy+"px";
+  tutHand.textContent = glyph;
+}
 document.getElementById("tutOk").onclick = ()=>{
   tutorial.classList.remove("on");
   last = performance.now();   // avoid a huge dt jump (and time-loss) after closing
@@ -1032,6 +1103,7 @@ function frame(t){
   syncCarpets();
   syncPeople(t);
   renderer.render(scene, camera);
+  updateTutorialFX(t);
   requestAnimationFrame(frame);
 }
 
