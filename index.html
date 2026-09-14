@@ -174,6 +174,11 @@ const LEVELS = [
     [5,5,"yellow"],[6,5,"yellow"],[6,6,"yellow"],
     [4,1,"green"],[4,2,"green"]],
   doors:[[3,-1,"purple"],[7,1,"red"],[-1,6,"blue"],[7,6,"yellow"],[4,-1,"green"]] },
+
+{ name:"Level 5", w:9, h:6, star:[54,81,126],
+  walls:[[2,2],[3,2],[4,2],[4,3],[3,3],[2,3]],
+  people:[[0,5,"blue"],[1,5,"blue"],[6,0,"blue"],[5,2,"yellow"],[6,2,"yellow"],[7,2,"yellow"],[2,0,"green"],[2,1,"green"],[8,3,"green"],[5,0,"red"],[5,1,"red"],[3,1,"red"],[7,4,"blue"],[7,5,"blue"],[8,5,"blue"],[0,1,"purple"],[0,3,"purple"],[4,4,"purple"]],
+  doors:[[-1,2,"green"],[9,1,"blue"],[5,-1,"red"],[9,5,"red"],[3,6,"yellow"],[4,6,"yellow"],[5,6,"yellow"],[8,-1,"purple"]] },
 ];
 
 /* ══════════════════════════════════════════════════════════════════
@@ -560,6 +565,38 @@ function boneBetween(mesh, a, b, r){
   mesh.quaternion.setFromUnitVectors(UP, _v);
 }
 
+/** groups adjacent same-color door cells on the same board edge into one
+ *  wider gate — a 2-wide group of matching doors then accepts a 2-cell-wide
+ *  carpet exiting in a single move, same as the base game rules already allow. */
+function clusterDoors(doors){
+  const used = new Set();
+  const clusters = [];
+  for(const d of doors){
+    const dk = key(d.x,d.y)+"|"+d.color;
+    if(used.has(dk)) continue;
+    const vertical = (d.x < 0 || d.x >= S.w);   // left/right edge → varies in y
+    const cluster = [d];
+    used.add(dk);
+    let changed = true;
+    while(changed){
+      changed = false;
+      for(const other of doors){
+        const ok = key(other.x,other.y)+"|"+other.color;
+        if(used.has(ok) || other.color!==d.color) continue;
+        const sameEdge = vertical ? other.x===d.x : other.y===d.y;
+        if(!sameEdge) continue;
+        const adj = cluster.some(c=> vertical
+          ? Math.abs(c.y-other.y)===1
+          : Math.abs(c.x-other.x)===1);
+        if(adj){ cluster.push(other); used.add(ok); changed=true; }
+      }
+    }
+    cluster.sort((a,b)=> vertical ? a.y-b.y : a.x-b.x);
+    clusters.push({ color:d.color, members:cluster });
+  }
+  return clusters;
+}
+
 function clearGroup(gp){
   if(!gp) return;
   world.remove(gp);
@@ -595,17 +632,36 @@ function buildScene(){
     }
   }
 
-  // doors
-  for(const d of S.doors){
+  // doors — adjacent same-color doors on the same edge merge into one wide gate
+  for(const cl of clusterDoors(S.doors)){
+    const first = cl.members[0], last = cl.members[cl.members.length-1];
+    const midx = (first.x+last.x)/2, midy = (first.y+last.y)/2;
+    const vertical = (first.x < 0 || first.x >= S.w);   // sits on the left/right edge
+
     const gp = new THREE.Group();
-    gp.position.set(wx(d.x), 0.34, wz(d.y));
-    const ring = new THREE.Mesh(GEO.ring, doorMat[d.color]);
-    // face the board
-    if(d.x < 0 || d.x >= S.w) ring.rotation.y = Math.PI/2;
-    gp.add(ring);
-    gp.userData.spin = ring;
+    gp.position.set(wx(midx), 0.34, wz(midy));
+
+    const ringA = new THREE.Mesh(GEO.ring, doorMat[cl.color]);
+    if(vertical) ringA.rotation.y = Math.PI/2;
+    ringA.position.set(wx(first.x)-wx(midx), 0, wz(first.y)-wz(midy));
+    gp.add(ringA);
+
+    if(cl.members.length > 1){
+      const ringB = new THREE.Mesh(GEO.ring, doorMat[cl.color]);
+      if(vertical) ringB.rotation.y = Math.PI/2;
+      ringB.position.set(wx(last.x)-wx(midx), 0, wz(last.y)-wz(midy));
+      gp.add(ringB);
+
+      const span = cl.members.length - 1;
+      const bar = new THREE.Mesh(
+        vertical ? new THREE.BoxGeometry(0.16,0.09,span) : new THREE.BoxGeometry(span,0.09,0.16),
+        doorMat[cl.color]);
+      gp.add(bar);
+    }
+
+    gp.userData.spin = ringA;
     boardGroup.add(gp);
-    d.mesh = gp;
+    cl.members.forEach(m=> m.mesh = gp);
   }
 
   // people
