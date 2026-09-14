@@ -690,7 +690,7 @@ function buildScene(){
 function fitCamera(){
   const span = Math.max(S.w, S.h*0.86) + 3.8;   // room for the doors sitting outside the grid
   const dist = span / (2*Math.tan(camera.fov*Math.PI/360)) * 1.02;
-  camera.position.set(0, dist*0.62, dist*0.80);   // lower, more of a 3/4 view
+  camera.position.set(0, dist*0.98, dist*0.34);   // steep, near top-down view
   camera.lookAt(0, 0.15, 0.1);
   // keep the haze behind the board, never on it
   scene.fog.near = dist*1.25;
